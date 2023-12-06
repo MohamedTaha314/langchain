@@ -83,9 +83,12 @@ class BaseConversationalRetrievalChain(Chain):
     get_chat_history: Optional[Callable[[List[CHAT_TURN_TYPE]], str]] = None
     """An optional function to get a string of the chat history.
     If None is provided, will use a default."""
-    response_if_no_docs_found: Optional[str]
+    response_if_no_docs_found: Optional[
+        str
+    ] = " No relevant documents found to answer the question"
     """If specified, the chain will return a fixed response if no docs 
     are found for the question. """
+    additional_input_keys: Optional[List[str]]
 
     class Config:
         """Configuration for this pydantic object."""
@@ -97,7 +100,10 @@ class BaseConversationalRetrievalChain(Chain):
     @property
     def input_keys(self) -> List[str]:
         """Input keys."""
-        return ["question", "chat_history"]
+        input_keys = ["question", "chat_history"]
+        if self.additional_input_keys:
+            input_keys.extend(self.additional_input_keys)
+        return input_keys
 
     def get_input_schema(
         self, config: Optional[RunnableConfig] = None
@@ -138,10 +144,27 @@ class BaseConversationalRetrievalChain(Chain):
         chat_history_str = get_chat_history(inputs["chat_history"])
 
         if chat_history_str:
-            callbacks = _run_manager.get_child()
-            new_question = self.question_generator.run(
-                question=question, chat_history=chat_history_str, callbacks=callbacks
-            )
+            additional_kwargs = (
+                {}
+            )  # Create an empty dictionary to store keyword arguments
+            if self.additional_input_keys:
+                for key in self.additional_input_keys:
+                    additional_kwargs[key] = inputs[key]
+
+                callbacks = _run_manager.get_child()
+                new_question = self.question_generator.run(
+                    question=question,
+                    chat_history=chat_history_str,
+                    **additional_kwargs,
+                    callbacks=callbacks,
+                )
+            else:
+                callbacks = _run_manager.get_child()
+                new_question = self.question_generator.run(
+                    question=question,
+                    chat_history=chat_history_str,
+                    callbacks=callbacks,
+                )
         else:
             new_question = question
         accepts_run_manager = (
